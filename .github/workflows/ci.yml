@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  vendored:
+    name: Build against the vendored C library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev pipewire
+
+      - name: Build
+        run: cargo build --workspace --all-targets --features vendored
+
+      - name: Test
+        run: cargo test --workspace --features vendored
+
+  system:
+    name: Build against an installed C library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev pipewire
+
+      - name: Install tinypipewire
+        run: |
+          meson setup build vendor/tinypipewire \
+            -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
+          sudo meson install -C build
+          sudo ldconfig
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Check that the committed bindings still match the headers
+        env:
+          TINYPIPEWIRE_SYS_UPDATE_BINDINGS: "1"
+        run: |
+          cargo build -p tinypipewire-sys
+          git diff --exit-code -- tinypipewire-sys/src/bindings/pregenerated.rs
+
+  lint:
+    name: Format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev
+
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --features vendored -- -D warnings
+
+  no-libclang:
+    name: Build from the committed bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev
+
+      - name: Build with bindgen turned off
+        run: cargo build -p tinypipewire --no-default-features --features vendored
