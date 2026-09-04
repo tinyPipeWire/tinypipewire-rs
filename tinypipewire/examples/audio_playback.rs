@@ -4,7 +4,7 @@
 use std::f32::consts::TAU;
 use std::time::Duration;
 
-use tinypipewire::{AudioConfig, SampleFormat, Stream};
+use tinypipewire::{AudioConfig, Routing, SampleFormat, Stream};
 
 const RATE: u32 = 48_000;
 const CHANNELS: u32 = 2;
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     if let Some(sink) = std::env::args().nth(1) {
-        stream.set_target(&sink)?;
+        stream.set_routing(Routing::Autoconnect(Some(&sink)))?;
     }
     stream.set_audio_config(&AudioConfig::new(RATE, CHANNELS).with_format(SampleFormat::F32))?;
     stream.start()?;

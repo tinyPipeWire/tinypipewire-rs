@@ -232,6 +232,32 @@ impl PortMemory {
     }
 }
 
+/// How a stream reaches the rest of the graph.
+///
+/// PipeWire has one switch here, `node.autoconnect`, which is what tells a
+/// session manager the stream is its to wire. A target is only a refinement
+/// of that: it becomes the node's `target.object`, which nothing reads unless
+/// the session manager is already looking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Routing<'a> {
+    /// The session manager does the wiring. A name asks it for that node,
+    /// as `wpctl status` or `pw-cli ls Node` shows it or by its
+    /// `object.serial`, and is a hint it may override; `None` leaves the
+    /// choice to it entirely.
+    Autoconnect(Option<&'a str>),
+    /// The stream carries no `node.autoconnect`, so the session manager
+    /// leaves it alone. [`Stream::link`](crate::Stream::link) wires it once
+    /// it has started, and names the node there instead.
+    Manual,
+}
+
+impl Default for Routing<'_> {
+    fn default() -> Self {
+        Routing::Autoconnect(None)
+    }
+}
+
 /// One node a stream or port can be pointed at.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TargetInfo {
