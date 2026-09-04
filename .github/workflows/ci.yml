@@ -79,6 +79,7 @@ jobs:
       - name: Start a headless PipeWire daemon
         run: |
           mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
           pipewire > /tmp/pipewire-smoke.log 2>&1 &
           disown
           for _ in $(seq 1 20); do
@@ -89,12 +90,34 @@ jobs:
           cat /tmp/pipewire-smoke.log >&2
           exit 1
 
-      # list_targets connects a real capture stream and enumerates
-      # targets. There is no audio/video hardware here, so the list
-      # comes back empty, but running it proves the FFI actually
-      # talks to a live daemon rather than only linking against it.
-      - name: Run an example against the live daemon
-        run: cargo run -p tinypipewire --example list_targets
+      # A null sink gives the graph a stereo Audio/Sink node with a clock,
+      # so a playback stream has something to link to and real cycles to be
+      # driven by. Without it the runner has no audio node at all.
+      - name: Create a null sink
+        run: |
+          pw-cli create-node adapter '{
+            factory.name  = support.null-audio-sink
+            node.name     = tpw-smoke-sink
+            media.class   = Audio/Sink
+            object.linger = true
+            audio.position = [ FL FR ]
+          }'
+          for _ in $(seq 1 20); do
+            pw-cli ls Node | grep -q tpw-smoke-sink && exit 0
+            sleep 0.5
+          done
+          echo "the null sink never appeared in the graph:" >&2
+          pw-cli ls Node >&2
+          exit 1
+
+      # These are #[ignore]d so every other job can run the suite with no
+      # daemon; here they assert the callbacks actually fire.
+      - name: Run the smoke tests
+        run: cargo test -p tinypipewire --test smoke -- --ignored --test-threads=1
+
+      - name: Show the daemon log on failure
+        if: failure()
+        run: cat /tmp/pipewire-smoke.log
 
   bindings:
     name: Check the committed bindings against the pinned headers
