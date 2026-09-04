@@ -58,6 +58,11 @@
 //! it. Dropping a [`Stream`] or [`Filter`] stops it and joins that thread, so
 //! no callback can still be running afterwards.
 //!
+//! Handle methods take `&self` even when they change the handle, because the
+//! C library locks PipeWire's thread loop inside each call. That is interior
+//! mutability, not a promise of thread safety: both handles are `Send` and
+//! neither is `Sync`, so sharing one between threads does not compile.
+//!
 //! # Linking
 //!
 //! The `tinypipewire-sys` crate finds the C library through `pkg-config`, and
