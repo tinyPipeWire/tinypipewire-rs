@@ -33,7 +33,8 @@ struct StreamState {
 
 /// A capture or playback stream.
 ///
-/// Created with [`Stream::new_capture`] or [`Stream::new_playback`], then
+/// Created with [`Stream::audio_capture`], [`Stream::video_capture`] or
+/// [`Stream::playback`], then
 /// configured with a format — and optionally a target — before
 /// [`Stream::start`]. The buffer callback runs on PipeWire's own thread, so
 /// the closure it was built with must be `Send`.
@@ -51,18 +52,26 @@ pub struct Stream {
 unsafe impl Send for Stream {}
 
 impl Stream {
-    /// Creates a capture stream of `kind`, which must be
-    /// [`StreamType::Audio`] or [`StreamType::Video`].
+    /// Creates a stream that captures audio.
     ///
     /// `callback` is invoked with every delivered buffer once the stream has
     /// started, on PipeWire's loop thread.
-    pub fn new_capture<F>(kind: StreamType, callback: F) -> Result<Self>
+    pub fn audio_capture<F>(callback: F) -> Result<Self>
     where
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
-        Self::create(Delivery::Capture(Box::new(callback)), |state| unsafe {
-            sys::tpw_stream_create(kind.to_raw(), Some(on_capture), state)
-        })
+        Self::capture(StreamType::Audio, callback)
+    }
+
+    /// Creates a stream that captures video.
+    ///
+    /// `callback` is invoked with every delivered frame once the stream has
+    /// started, on PipeWire's loop thread.
+    pub fn video_capture<F>(callback: F) -> Result<Self>
+    where
+        F: FnMut(CaptureBuffer<'_>) + Send + 'static,
+    {
+        Self::capture(StreamType::Video, callback)
     }
 
     /// Creates an audio playback stream, emitting to an output device.
@@ -70,12 +79,23 @@ impl Stream {
     /// `callback` is invoked once per cycle to fill the next block of audio.
     /// Video playback has no C API: a node that emits video is a filter output
     /// port instead.
-    pub fn new_playback<F>(callback: F) -> Result<Self>
+    pub fn playback<F>(callback: F) -> Result<Self>
     where
         F: FnMut(&mut PlaybackBuffer<'_>) + Send + 'static,
     {
         Self::create(Delivery::Playback(Box::new(callback)), |state| unsafe {
             sys::tpw_stream_create_playback(Some(on_playback), state)
+        })
+    }
+
+    /// The two capture constructors differ only in the media type they ask
+    /// for; the C API rejects the signal and event types here.
+    fn capture<F>(kind: StreamType, callback: F) -> Result<Self>
+    where
+        F: FnMut(CaptureBuffer<'_>) + Send + 'static,
+    {
+        Self::create(Delivery::Capture(Box::new(callback)), |state| unsafe {
+            sys::tpw_stream_create(kind.to_raw(), Some(on_capture), state)
         })
     }
 

@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut phase = 0.0f32;
     let step = TAU * 440.0 / RATE as f32;
 
-    let stream = Stream::new_playback(move |buf| {
+    let stream = Stream::playback(move |buf| {
         let frames = buf.available() / (CHANNELS as usize * 4);
         let mut samples = Vec::with_capacity(frames * CHANNELS as usize);
         for _ in 0..frames {

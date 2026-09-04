@@ -10,10 +10,10 @@
 //! # Capturing audio
 //!
 //! ```no_run
-//! use tinypipewire::{AudioConfig, Stream, StreamType};
+//! use tinypipewire::{AudioConfig, Stream};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let stream = Stream::new_capture(StreamType::Audio, |buf| {
+//! let stream = Stream::audio_capture(|buf| {
 //!     if let Some(data) = buf.data() {
 //!         println!("{} bytes (pts={:?})", data.len(), buf.pts());
 //!     }
@@ -27,7 +27,7 @@
 //! # }
 //! ```
 //!
-//! Swap [`StreamType::Video`] and [`Stream::set_video_config`] in to capture
+//! Use [`Stream::video_capture`] with [`Stream::set_video_config`] to capture
 //! from a camera instead; everything else is the same.
 //!
 //! # Playing audio
@@ -39,7 +39,7 @@
 //! use tinypipewire::{AudioConfig, Stream};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let stream = Stream::new_playback(|buf| {
+//! let stream = Stream::playback(|buf| {
 //!     let silence = vec![0u8; buf.available()];
 //!     buf.write(&silence);
 //! })?;

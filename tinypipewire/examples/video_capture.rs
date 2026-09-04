@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use tinypipewire::{PixelFormat, Stream, StreamType, VideoConfig};
+use tinypipewire::{PixelFormat, Stream, VideoConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let stream = Stream::new_capture(StreamType::Video, |buf| {
+    let stream = Stream::video_capture(|buf| {
         println!(
             "frame: {} bytes (pts={:?} ns)",
             buf.data().map_or(0, <[u8]>::len),
