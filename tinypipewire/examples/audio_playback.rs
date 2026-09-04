@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use tinypipewire::{AudioConfig, SampleFormat, Stream};
 
-const RATE: i32 = 48_000;
-const CHANNELS: i32 = 2;
+const RATE: u32 = 48_000;
+const CHANNELS: u32 = 2;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut phase = 0.0f32;

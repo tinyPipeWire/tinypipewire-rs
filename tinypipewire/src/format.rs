@@ -1,6 +1,6 @@
 //! Formats, configuration structs, and the descriptions a device reports.
 
-use std::ffi::CStr;
+use std::ffi::{c_int, CStr};
 use std::os::fd::RawFd;
 
 use tinypipewire_sys as sys;
@@ -139,16 +139,16 @@ impl PixelFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AudioConfig {
     /// Sample rate in Hz, e.g. 48000.
-    pub sample_rate: i32,
+    pub sample_rate: u32,
     /// Channel count, e.g. 2.
-    pub channels: i32,
+    pub channels: u32,
     /// Sample format.
     pub format: SampleFormat,
 }
 
 impl AudioConfig {
     /// A config for `sample_rate` and `channels` in the default `S16` format.
-    pub fn new(sample_rate: i32, channels: i32) -> Self {
+    pub fn new(sample_rate: u32, channels: u32) -> Self {
         AudioConfig {
             sample_rate,
             channels,
@@ -164,8 +164,8 @@ impl AudioConfig {
 
     pub(crate) fn to_raw(self) -> sys::tpw_audio_config {
         sys::tpw_audio_config {
-            sample_rate: self.sample_rate,
-            channels: self.channels,
+            sample_rate: to_c_int(self.sample_rate),
+            channels: to_c_int(self.channels),
             format: self.format.as_cstr().as_ptr(),
         }
     }
@@ -175,19 +175,19 @@ impl AudioConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VideoConfig {
     /// Frame width in pixels.
-    pub width: i32,
+    pub width: u32,
     /// Frame height in pixels.
-    pub height: i32,
+    pub height: u32,
     /// Pixel format.
     pub pixel_format: PixelFormat,
     /// Frames per second; 0 negotiates automatically.
-    pub fps: i32,
+    pub fps: u32,
 }
 
 impl VideoConfig {
     /// A config for this size and pixel format, letting the frame rate be
     /// negotiated.
-    pub fn new(width: i32, height: i32, pixel_format: PixelFormat) -> Self {
+    pub fn new(width: u32, height: u32, pixel_format: PixelFormat) -> Self {
         VideoConfig {
             width,
             height,
@@ -197,17 +197,17 @@ impl VideoConfig {
     }
 
     /// Asks for a specific frame rate instead of a negotiated one.
-    pub fn with_fps(mut self, fps: i32) -> Self {
+    pub fn with_fps(mut self, fps: u32) -> Self {
         self.fps = fps;
         self
     }
 
     pub(crate) fn to_raw(self) -> sys::tpw_video_config {
         sys::tpw_video_config {
-            width: self.width,
-            height: self.height,
+            width: to_c_int(self.width),
+            height: to_c_int(self.height),
             pixel_format: self.pixel_format.as_cstr().as_ptr(),
-            fps: self.fps,
+            fps: to_c_int(self.fps),
         }
     }
 }
@@ -262,15 +262,15 @@ pub struct VideoFormatInfo {
     /// not know.
     pub pixel_format: Option<PixelFormat>,
     /// Frame width, or the smallest one for a size range.
-    pub width: i32,
+    pub width: u32,
     /// Frame height, or the smallest one for a size range.
-    pub height: i32,
+    pub height: u32,
     /// Equal to `width` for a discrete size, the range's largest otherwise.
-    pub width_max: i32,
+    pub width_max: u32,
     /// Equal to `height` for a discrete size, the range's largest otherwise.
-    pub height_max: i32,
+    pub height_max: u32,
     /// Whole frames per second at this size, highest first.
-    pub fps: Vec<i32>,
+    pub fps: Vec<u32>,
 }
 
 impl VideoFormatInfo {
@@ -280,11 +280,11 @@ impl VideoFormatInfo {
             pixel_format: CStr::from_bytes_until_nul(bytes_of(&raw.pixel_format))
                 .ok()
                 .and_then(PixelFormat::from_cstr),
-            width: raw.width,
-            height: raw.height,
-            width_max: raw.width_max,
-            height_max: raw.height_max,
-            fps: raw.fps[..n_fps].to_vec(),
+            width: from_c_int(raw.width),
+            height: from_c_int(raw.height),
+            width_max: from_c_int(raw.width_max),
+            height_max: from_c_int(raw.height_max),
+            fps: raw.fps[..n_fps].iter().copied().map(from_c_int).collect(),
         }
     }
 
@@ -330,6 +330,18 @@ impl DmabufPlane {
             size: raw.size,
         }
     }
+}
+
+/// C takes sizes and rates as `int`. A value too large to fit saturates, so
+/// the library rejects it rather than seeing a negative one it might accept.
+fn to_c_int(value: u32) -> c_int {
+    c_int::try_from(value).unwrap_or(c_int::MAX)
+}
+
+/// C reports the same fields as `int`; a negative one would be a library bug,
+/// so it reads as zero rather than wrapping.
+fn from_c_int(value: c_int) -> u32 {
+    u32::try_from(value).unwrap_or(0)
 }
 
 fn bytes_of(chars: &[std::ffi::c_char]) -> &[u8] {
