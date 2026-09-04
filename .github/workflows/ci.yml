@@ -76,6 +76,13 @@ jobs:
           sudo meson install -C build
           sudo ldconfig
 
+      # Both daemons look for a session bus, and wireplumber quits without
+      # one; a runner has none until it is asked for.
+      - name: Start a session bus
+        run: |
+          echo "DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address)" \
+            >> "$GITHUB_ENV"
+
       - name: Start a headless PipeWire daemon
         run: |
           mkdir -p "$XDG_RUNTIME_DIR"
@@ -115,12 +122,17 @@ jobs:
       - name: Start the session manager
         run: |
           wireplumber > /tmp/wireplumber-smoke.log 2>&1 &
+          wp_pid=$!
           disown
           for _ in $(seq 1 20); do
-            pw-cli ls Node | grep -q tpw-smoke-sink && exit 0
+            # wpctl talks to wireplumber itself, so this fails while it is
+            # absent — unlike looking for a node the daemon already had.
+            if kill -0 "$wp_pid" 2>/dev/null && wpctl status > /dev/null 2>&1; then
+              exit 0
+            fi
             sleep 0.5
           done
-          echo "wireplumber did not take up the sink:" >&2
+          echo "wireplumber is not managing the graph:" >&2
           cat /tmp/wireplumber-smoke.log >&2
           exit 1
 
@@ -135,6 +147,7 @@ jobs:
           echo "== pipewire =="; cat /tmp/pipewire-smoke.log
           echo "== wireplumber =="; cat /tmp/wireplumber-smoke.log 2>/dev/null
           echo "== graph =="; pw-cli ls Node 2>/dev/null || true
+          echo "== session =="; wpctl status 2>/dev/null || echo "wpctl could not connect"
 
   bindings:
     name: Check the committed bindings against the pinned headers
