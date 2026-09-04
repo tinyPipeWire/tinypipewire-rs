@@ -5,7 +5,8 @@ categories = ["external-ffi-bindings", "multimedia"]
 keywords = ["pipewire", "audio", "video", "ffi", "bindings"]
 links = "tinypipewire"
 build = "build.rs"
-version.workspace = true
+# Own semver for the crate; the build metadata names the C release it binds.
+version = "0.1.0+tpw0.8.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
