@@ -53,6 +53,49 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  smoke:
+    name: Headless smoke test against a running daemon
+    runs-on: ubuntu-latest
+    env:
+      XDG_RUNTIME_DIR: /tmp/pipewire-smoke-runtime
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev pipewire
+
+      - name: Install tinypipewire
+        run: |
+          meson setup build vendor/tinypipewire \
+            -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
+          sudo meson install -C build
+          sudo ldconfig
+
+      - name: Start a headless PipeWire daemon
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR"
+          pipewire > /tmp/pipewire-smoke.log 2>&1 &
+          disown
+          for _ in $(seq 1 20); do
+            [ -S "$XDG_RUNTIME_DIR/pipewire-0" ] && exit 0
+            sleep 0.5
+          done
+          echo "pipewire did not start:" >&2
+          cat /tmp/pipewire-smoke.log >&2
+          exit 1
+
+      # list_targets connects a real capture stream and enumerates
+      # targets. There is no audio/video hardware here, so the list
+      # comes back empty, but running it proves the FFI actually
+      # talks to a live daemon rather than only linking against it.
+      - name: Run an example against the live daemon
+        run: cargo run -p tinypipewire --example list_targets
+
   bindings:
     name: Check the committed bindings against the pinned headers
     runs-on: ubuntu-latest
