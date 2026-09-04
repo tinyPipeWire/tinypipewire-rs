@@ -14,7 +14,7 @@ use crate::error::{check, Error, Result};
 use crate::format::{
     AudioConfig, DmabufPlane, PortMemory, StreamType, VideoConfig, VideoFormatInfo,
 };
-use crate::util::{collect_list, guard, state, with_cstr};
+use crate::util::{collect_list, guard, state, try_collect_list, with_cstr};
 
 type ProcessFn = Box<dyn FnMut(&mut [PortBuffer]) + Send>;
 type ErrorFn = Box<dyn FnMut(Option<Port>, Error) + Send>;
@@ -154,14 +154,20 @@ impl Filter {
     /// filter, so a port can be added with a format the device really has.
     pub fn target_video_formats(&self, target: &str) -> Result<Vec<VideoFormatInfo>> {
         with_cstr(target, |target| unsafe {
-            collect_list(
+            try_collect_list(
                 32,
-                |out, len| {
-                    sys::tpw_filter_get_target_video_formats(self.handle, target.as_ptr(), out, len)
+                |out, len, found| {
+                    sys::tpw_filter_get_target_video_formats(
+                        self.handle,
+                        target.as_ptr(),
+                        out,
+                        len,
+                        found,
+                    )
                 },
                 VideoFormatInfo::from_raw,
             )
-        })
+        })?
     }
 
     /// Asks the graph to run this filter at least once every `max_period`,
