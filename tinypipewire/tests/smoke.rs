@@ -7,6 +7,11 @@
 //! What these cover that the daemon-free tests cannot: the callback
 //! trampolines actually firing, the target list coming back with real
 //! entries, and a handle being dropped while its loop thread still runs.
+//!
+//! Routing here goes through the session manager, the path an application
+//! normally takes. Manual routing — autoconnect off, then `link()` — is
+//! covered only by the C library's hardware suite, and a stream's own ports
+//! never appear in a bare headless graph for it to link.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -68,14 +73,13 @@ fn the_playback_callback_runs_and_its_writes_are_taken() {
     })
     .expect("a playback stream needs a daemon");
 
-    // Manual routing, so no session manager has to be running: autoconnect
-    // off, then link once the stream's own ports exist.
-    stream.set_autoconnect(false).expect("autoconnect off");
+    // The session manager does the wiring, so the target is a hint set
+    // before the format, which is what connects the stream.
+    stream.set_target(&sink()).expect("target the sink");
     stream
         .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
         .expect("the sink is stereo f32");
     stream.start().expect("start");
-    stream.link(&sink()).expect("link to the sink");
 
     wait_for(|| calls.load(Ordering::Relaxed) > 0);
     stream.stop(true).expect("stop");
