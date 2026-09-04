@@ -11,6 +11,14 @@ filters.
 
 The bindings track C API 0.8.0, pinned as a submodule under `vendor/`.
 
+The two crates carry their own semver rather than the C library's, because a
+change to the Rust interface and a change to the C API are different events and
+each needs a version to say so. `tinypipewire-sys` names the C release it binds
+as build metadata, as in `0.1.0+tpw0.8.0`; that metadata is ignored when
+resolving versions and is there to be read. Which C API a build actually got is
+reported at runtime by `tinypipewire::C_API_VERSION`, taken from the headers
+themselves.
+
 ## Requirements
 
 PipeWire is Linux-only, so the crates build and run there. Building needs
@@ -31,7 +39,7 @@ cargo build --features vendored
 
 ```toml
 [dependencies]
-tinypipewire = "0.8"
+tinypipewire = "0.1"
 ```
 
 Capture from the default microphone for five seconds:
