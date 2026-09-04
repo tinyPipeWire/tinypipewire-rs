@@ -143,6 +143,9 @@ fn write_bindings(include_paths: &[PathBuf]) {
     if env::var_os("DOCS_RS").is_none() {
         let mut builder = bindgen::Builder::default()
             .header("wrapper.h")
+            // Installed headers sit on the system include path, where clang
+            // drops comments unless asked to keep them.
+            .clang_arg("-fretain-comments-from-system-headers")
             .allowlist_item("tpw_.*")
             .allowlist_item("TPW_.*")
             .derive_default(true)

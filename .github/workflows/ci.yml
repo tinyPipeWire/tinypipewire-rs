@@ -13,7 +13,7 @@ jobs:
     name: Build against the vendored C library
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -33,7 +33,7 @@ jobs:
     name: Build against an installed C library
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -53,8 +53,24 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: Check that the committed bindings still match the headers
+  bindings:
+    name: Check the committed bindings against the pinned headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+
+      # Reading the submodule's headers keeps this independent of where any
+      # library happens to be installed, and needs no PipeWire to link against.
+      - name: Regenerate and compare
         env:
+          TINYPIPEWIRE_SYS_HEADERS_ONLY: "1"
           TINYPIPEWIRE_SYS_UPDATE_BINDINGS: "1"
         run: |
           cargo build -p tinypipewire-sys
@@ -64,7 +80,7 @@ jobs:
     name: Format and lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -81,7 +97,7 @@ jobs:
     name: Build from the committed bindings
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
