@@ -68,7 +68,7 @@ fn link() -> Vec<PathBuf> {
     }
 
     match pkg_config::Config::new()
-        .atleast_version("0.8.0")
+        .atleast_version("0.9.0")
         .probe("tinypipewire")
     {
         Ok(lib) => lib.include_paths,
