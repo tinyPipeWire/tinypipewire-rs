@@ -1,0 +1,11 @@
+[workspace]
+members = ["tinypipewire-sys", "tinypipewire"]
+resolver = "2"
+
+[workspace.package]
+version = "0.8.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/tinyPipeWire/tinypipewire-rs"
+authors = ["Sangchul Lee <sangchul1011@gmail.com>"]
