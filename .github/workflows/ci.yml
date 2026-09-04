@@ -67,7 +67,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build pkg-config \
-            libpipewire-0.3-dev libspa-0.2-dev pipewire
+            libpipewire-0.3-dev libspa-0.2-dev pipewire wireplumber
 
       - name: Install tinypipewire
         run: |
@@ -110,14 +110,31 @@ jobs:
           pw-cli ls Node >&2
           exit 1
 
+      # Autoconnect is what wires a stream to its target, and only a session
+      # manager does that wiring.
+      - name: Start the session manager
+        run: |
+          wireplumber > /tmp/wireplumber-smoke.log 2>&1 &
+          disown
+          for _ in $(seq 1 20); do
+            pw-cli ls Node | grep -q tpw-smoke-sink && exit 0
+            sleep 0.5
+          done
+          echo "wireplumber did not take up the sink:" >&2
+          cat /tmp/wireplumber-smoke.log >&2
+          exit 1
+
       # These are #[ignore]d so every other job can run the suite with no
       # daemon; here they assert the callbacks actually fire.
       - name: Run the smoke tests
         run: cargo test -p tinypipewire --test smoke -- --ignored --test-threads=1
 
-      - name: Show the daemon log on failure
+      - name: Show the daemon logs on failure
         if: failure()
-        run: cat /tmp/pipewire-smoke.log
+        run: |
+          echo "== pipewire =="; cat /tmp/pipewire-smoke.log
+          echo "== wireplumber =="; cat /tmp/wireplumber-smoke.log 2>/dev/null
+          echo "== graph =="; pw-cli ls Node 2>/dev/null || true
 
   bindings:
     name: Check the committed bindings against the pinned headers
