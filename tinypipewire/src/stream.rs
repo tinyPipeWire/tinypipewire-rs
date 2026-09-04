@@ -41,6 +41,15 @@ struct StreamState {
 /// the closure it was built with must be `Send`.
 ///
 /// Dropping the stream stops it and releases every resource behind it.
+///
+/// # Shared references
+///
+/// Every method takes `&self`, including the ones that change the stream.
+/// That is not a claim of thread safety: the C library takes PipeWire's
+/// thread-loop lock inside each of its own calls, which makes this genuine
+/// interior mutability, and `Stream` is deliberately not `Sync`, so the
+/// compiler still refuses to share one across threads. It is `Send`, so a
+/// stream can be moved to another thread and driven from there.
 pub struct Stream {
     handle: sys::tpw_stream_h,
     // Boxed so the address handed to C stays put while the Stream moves.

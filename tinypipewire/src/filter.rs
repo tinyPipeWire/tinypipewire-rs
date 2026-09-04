@@ -54,6 +54,13 @@ impl PortDirection {
 /// reach it through something shared — an `Arc`, a channel, or a `OnceLock`.
 ///
 /// Dropping the filter stops it and releases every port behind it.
+///
+/// # Shared references
+///
+/// Every method takes `&self`, as on [`Stream`](crate::Stream) and for the
+/// same reason: the C library locks PipeWire's thread loop inside its own
+/// calls, so this is genuine interior mutability rather than a claim of
+/// thread safety. `Filter` is `Send` but not `Sync`.
 pub struct Filter {
     handle: sys::tpw_filter_h,
     // Boxed so the address handed to C stays put while the Filter moves.
