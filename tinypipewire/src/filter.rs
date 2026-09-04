@@ -311,6 +311,9 @@ impl PortBuffer {
 
     /// The bytes an input port has to read this cycle, or `None` when no
     /// buffer was available or the port negotiated DMABUF.
+    ///
+    /// An output port's slot reads as an empty slice until the callback has
+    /// filled it; use [`PortBuffer::output`] there.
     pub fn input(&self) -> Option<&[u8]> {
         if self.0.data.is_null() {
             None
@@ -322,10 +325,13 @@ impl PortBuffer {
     /// The region an output port may fill this cycle, or `None` when no
     /// buffer was available.
     ///
+    /// The C library sets a capacity only on output ports, so an input port's
+    /// slot always reads as `None` here rather than as an empty region.
+    ///
     /// Writing here does not by itself publish anything; follow it with
     /// [`PortBuffer::set_filled`].
     pub fn output(&mut self) -> Option<&mut [u8]> {
-        if self.0.data.is_null() {
+        if self.0.data.is_null() || self.0.capacity == 0 {
             None
         } else {
             Some(unsafe { slice::from_raw_parts_mut(self.0.data.cast::<u8>(), self.0.capacity) })
