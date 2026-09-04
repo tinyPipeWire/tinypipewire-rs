@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tinypipewire::{AudioConfig, Filter, PortDirection, SampleFormat, Stream, StreamType};
+use tinypipewire::{AudioConfig, Filter, PortDirection, Routing, SampleFormat, Stream, StreamType};
 
 /// How long to wait for the graph to start handing out cycles.
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -75,7 +75,9 @@ fn the_playback_callback_runs_and_its_writes_are_taken() {
 
     // The session manager does the wiring, so the target is a hint set
     // before the format, which is what connects the stream.
-    stream.set_target(&sink()).expect("target the sink");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
     stream
         .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
         .expect("the sink is stereo f32");
@@ -92,11 +94,44 @@ fn the_playback_callback_runs_and_its_writes_are_taken() {
     );
 }
 
+/// Each mode has to undo the other's half. Setting a target and then asking
+/// for another mode used to leave that target in place — silently when
+/// autoconnect stayed on, and as an error when it was turned off.
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn routing_can_be_changed_until_the_format_connects() {
+    let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
+
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_routing(Routing::Manual)
+        .expect("manual routing has to clear the target it replaces");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("a target has to be settable again");
+    stream
+        .set_routing(Routing::Autoconnect(None))
+        .expect("dropping the target has to clear the one it replaces");
+
+    // With the target really gone, the default sink takes the stream, and the
+    // callback runs at all only because something wired it.
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the sink is stereo f32");
+    stream.start().expect("start");
+    stream.stop(false).expect("stop");
+
+    // The mode is fixed once the format has connected the stream.
+    assert!(stream.set_routing(Routing::Manual).is_err());
+}
+
 #[test]
 #[ignore = "needs a running PipeWire daemon with a null sink"]
 fn a_running_stream_can_be_dropped_without_stopping() {
     let stream = Stream::audio_capture(|_| {}).expect("a stream needs a daemon");
-    stream.set_autoconnect(false).expect("autoconnect off");
+    stream.set_routing(Routing::Manual).expect("manual routing");
     stream
         .set_audio_config(&AudioConfig::new(48_000, 2))
         .expect("audio config");

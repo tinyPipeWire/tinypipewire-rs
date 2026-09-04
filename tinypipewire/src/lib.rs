@@ -82,8 +82,8 @@ pub mod log;
 pub use error::{Error, Result};
 pub use filter::{Event, EventKind, Filter, Port, PortBuffer, PortDirection};
 pub use format::{
-    AudioConfig, DmabufPlane, PixelFormat, PortMemory, SampleFormat, StreamType, TargetInfo,
-    VideoConfig, VideoFormatInfo,
+    AudioConfig, DmabufPlane, PixelFormat, PortMemory, Routing, SampleFormat, StreamType,
+    TargetInfo, VideoConfig, VideoFormatInfo,
 };
 pub use stream::{CaptureBuffer, PlaybackBuffer, Stream};
 

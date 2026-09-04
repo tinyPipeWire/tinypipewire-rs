@@ -9,7 +9,8 @@ use tinypipewire_sys as sys;
 
 use crate::error::{check, Error, Result};
 use crate::format::{
-    AudioConfig, DmabufPlane, PortMemory, StreamType, TargetInfo, VideoConfig, VideoFormatInfo,
+    AudioConfig, DmabufPlane, PortMemory, Routing, StreamType, TargetInfo, VideoConfig,
+    VideoFormatInfo,
 };
 use crate::util::{collect_list, guard, state, try_collect_list, with_cstr};
 
@@ -133,26 +134,34 @@ impl Stream {
         Ok(())
     }
 
-    /// Points the stream at a node, by name or `object.serial`.
+    /// Chooses how the stream reaches the graph.
     ///
-    /// Must be called before the format is set, which is what actually
-    /// connects the stream. Without it the stream takes PipeWire's default
-    /// source for its media type. This is a hint to the session manager, so it
-    /// is mutually exclusive with turning autoconnect off.
-    pub fn set_target(&self, target: &str) -> Result<()> {
-        with_cstr(target, |target| unsafe {
-            sys::tpw_stream_set_target(self.handle, target.as_ptr())
-        })
-        .and_then(check)
+    /// Must be called before the format, which is what actually connects the
+    /// stream and fixes the routing mode; afterwards it is refused. Until
+    /// then the choice can be changed freely, in either direction.
+    pub fn set_routing(&self, routing: Routing<'_>) -> Result<()> {
+        let (autoconnect, target) = match routing {
+            Routing::Autoconnect(target) => (true, target),
+            Routing::Manual => (false, None),
+        };
+
+        // Each variant sets the whole mode, not just the half its matching C
+        // setter covers: a target left behind would still route the stream,
+        // and the C library refuses to turn autoconnect off while one is set.
+        check(unsafe { sys::tpw_stream_set_target(self.handle, std::ptr::null()) })?;
+        check(unsafe { sys::tpw_stream_set_autoconnect(self.handle, autoconnect) })?;
+
+        match target {
+            Some(target) => with_cstr(target, |target| unsafe {
+                sys::tpw_stream_set_target(self.handle, target.as_ptr())
+            })
+            .and_then(check),
+            None => Ok(()),
+        }
     }
 
-    /// Clears a target set earlier, restoring the default source.
-    pub fn clear_target(&self) -> Result<()> {
-        check(unsafe { sys::tpw_stream_set_target(self.handle, std::ptr::null()) })
-    }
-
-    /// Lists every node [`Stream::set_target`] would accept for this stream's
-    /// media type.
+    /// Lists every node [`Routing::Autoconnect`] would accept for this
+    /// stream's media type.
     ///
     /// An empty list means the graph holds no such node; a graph that could
     /// not be reached is an error instead.
@@ -188,16 +197,8 @@ impl Stream {
         }
     }
 
-    /// Turns the session manager's automatic wiring on or off.
-    ///
-    /// Turning it off is what [`Stream::link`] needs, and is mutually
-    /// exclusive with [`Stream::set_target`].
-    pub fn set_autoconnect(&self, enable: bool) -> Result<()> {
-        check(unsafe { sys::tpw_stream_set_autoconnect(self.handle, enable) })
-    }
-
     /// Links this stream's port to `target` by hand, with no session manager
-    /// involved. Requires autoconnect off and the stream started.
+    /// involved. Requires [`Routing::Manual`] and the stream started.
     pub fn link(&self, target: &str) -> Result<()> {
         with_cstr(target, |target| unsafe {
             sys::tpw_stream_link(self.handle, target.as_ptr())
