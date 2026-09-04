@@ -16,7 +16,7 @@ fn print_targets(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("== {label} ==");
 
-    for target in stream.targets() {
+    for target in stream.targets()? {
         println!(
             "  {} [{}] {}",
             target.name, target.serial, target.description

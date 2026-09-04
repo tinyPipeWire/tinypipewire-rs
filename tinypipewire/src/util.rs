@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::error::{Error, Result};
+use crate::error::{check, Error, Result};
 
 /// Runs a callback trampoline, swallowing a panic rather than letting it
 /// unwind into C.
@@ -28,8 +28,35 @@ pub(crate) unsafe fn state<'a, S>(user_data: *mut c_void) -> Option<&'a S> {
 /// reporting more entries cannot spin here forever.
 const LIST_LIMIT: usize = 4096;
 
-/// Drives one of the C library's "fill up to `len`, return how many exist"
+/// Drives one of the C library's "fill up to `len`, report how many exist"
 /// queries, growing the buffer once if the first guess was too small.
+///
+/// This is the fallible half: the queries that ask the server a question can
+/// fail for reasons that say nothing about how many entries exist, so an empty
+/// list and a failed lookup are different answers.
+///
+/// # Safety
+/// `fill` must write no more than `len` entries to the pointer it is given.
+pub(crate) unsafe fn try_collect_list<R: Copy, T>(
+    initial: usize,
+    mut fill: impl FnMut(*mut R, usize, *mut usize) -> std::ffi::c_int,
+    map: impl Fn(&R) -> T,
+) -> Result<Vec<T>> {
+    let mut cap = initial.max(1);
+    loop {
+        let mut buf: Vec<R> = vec![std::mem::zeroed(); cap];
+        let mut found = 0usize;
+        check(fill(buf.as_mut_ptr(), cap, &mut found))?;
+        if found <= cap || cap >= LIST_LIMIT {
+            return Ok(buf[..found.min(cap)].iter().map(&map).collect());
+        }
+        cap = found.min(LIST_LIMIT);
+    }
+}
+
+/// The same shape for the queries that only read a buffer already delivered.
+/// Those cannot fail the way a server round-trip can, so they report a count
+/// and nothing else.
 ///
 /// # Safety
 /// `fill` must write no more than `len` entries to the pointer it is given.

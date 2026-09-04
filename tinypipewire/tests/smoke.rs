@@ -40,7 +40,7 @@ fn the_target_list_carries_real_entries() {
     let sink = sink();
     let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
 
-    let targets = stream.targets();
+    let targets = stream.targets().expect("the graph is reachable");
     let found = targets
         .iter()
         .find(|target| target.name == sink)

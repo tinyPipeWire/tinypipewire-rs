@@ -11,7 +11,7 @@ use crate::error::{check, Error, Result};
 use crate::format::{
     AudioConfig, DmabufPlane, PortMemory, StreamType, TargetInfo, VideoConfig, VideoFormatInfo,
 };
-use crate::util::{collect_list, guard, state, with_cstr};
+use crate::util::{collect_list, guard, state, try_collect_list, with_cstr};
 
 type CaptureFn = Box<dyn FnMut(CaptureBuffer<'_>) + Send>;
 type PlaybackFn = Box<dyn FnMut(&mut PlaybackBuffer<'_>) + Send>;
@@ -153,11 +153,14 @@ impl Stream {
 
     /// Lists every node [`Stream::set_target`] would accept for this stream's
     /// media type.
-    pub fn targets(&self) -> Vec<TargetInfo> {
+    ///
+    /// An empty list means the graph holds no such node; a graph that could
+    /// not be reached is an error instead.
+    pub fn targets(&self) -> Result<Vec<TargetInfo>> {
         unsafe {
-            collect_list(
+            try_collect_list(
                 16,
-                |out, len| sys::tpw_stream_get_target_list(self.handle, out, len),
+                |out, len, found| sys::tpw_stream_get_target_list(self.handle, out, len, found),
                 TargetInfo::from_raw,
             )
         }
@@ -171,15 +174,17 @@ impl Stream {
     /// [`Stream::targets`] does.
     pub fn target_video_formats(&self, target: Option<&str>) -> Result<Vec<VideoFormatInfo>> {
         let query = |name: *const std::ffi::c_char| unsafe {
-            collect_list(
+            try_collect_list(
                 32,
-                |out, len| sys::tpw_stream_get_target_video_formats(self.handle, name, out, len),
+                |out, len, found| {
+                    sys::tpw_stream_get_target_video_formats(self.handle, name, out, len, found)
+                },
                 VideoFormatInfo::from_raw,
             )
         };
         match target {
-            Some(target) => with_cstr(target, |target| query(target.as_ptr())),
-            None => Ok(query(std::ptr::null())),
+            Some(target) => with_cstr(target, |target| query(target.as_ptr()))?,
+            None => query(std::ptr::null()),
         }
     }
 

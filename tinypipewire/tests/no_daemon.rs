@@ -61,5 +61,5 @@ fn enum_variants_stay_distinct() {
 #[test]
 fn the_bound_c_api_is_the_pinned_one() {
     assert_eq!(C_API_VERSION.0, 0);
-    assert!(C_API_VERSION.1 >= 8);
+    assert!(C_API_VERSION.1 >= 9);
 }
