@@ -2,7 +2,7 @@
 
 pub const TPW_VERSION_MAJOR: u32 = 0;
 pub const TPW_VERSION_MINOR: u32 = 9;
-pub const TPW_VERSION_PATCH: u32 = 0;
+pub const TPW_VERSION_PATCH: u32 = 1;
 pub const TPW_LOG_ERROR: tpw_log_level = 0;
 pub const TPW_LOG_WARNING: tpw_log_level = 1;
 pub const TPW_LOG_INFO: tpw_log_level = 2;
@@ -170,7 +170,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Sets (or clears, with NULL) the PipeWire node this stream should\n        connect to, by name or serial (as shown by `wpctl status` or\n        `pw-cli ls Node`).\n\n Must be called before tpw_stream_set_audio_config()/\n tpw_stream_set_video_config(), which is what actually connects the\n stream. If never called, the stream auto-connects to PipeWire's default\n source for its media type.\n\n This is a hint to the session manager, which does the wiring, so it is\n meaningful only while autoconnect is on. Mutually exclusive with\n tpw_stream_set_autoconnect(false): whichever of the two is called second\n returns TPW_STREAM_ERR_INVALID_ARG.\n\n @param stream The stream to target, before its format is set.\n @param target A node name or object.serial, or NULL to clear a previously set target.\n @return TPW_STREAM_OK, or TPW_STREAM_ERR_INVALID_ARG (NULL stream, format already set, or autoconnect already turned off)."]
+    #[doc = " @brief Sets (or clears, with NULL) the PipeWire node this stream should\n        connect to, by name or serial (as shown by `wpctl status` or\n        `pw-cli ls Node`).\n\n Call it before tpw_stream_set_audio_config()/\n tpw_stream_set_video_config(), which is what actually connects the\n stream; a target set after that is kept but never read. If never\n called, the stream auto-connects to PipeWire's default source for its\n media type. This is a hint to the session manager, which does the\n wiring, so it means nothing while autoconnect is off: naming a target\n then is refused, though clearing with NULL is always accepted.\n\n @param stream The stream to target, before its format is set.\n @param target A node name or object.serial, or NULL to clear a previously set target.\n @return TPW_STREAM_OK, or TPW_STREAM_ERR_INVALID_ARG for a NULL `stream`, or for a non-NULL `target` while autoconnect is off."]
     pub fn tpw_stream_set_target(
         stream: tpw_stream_h,
         target: *const ::core::ffi::c_char,
@@ -266,7 +266,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Turns automatic connection off, so the application wires the\n        stream itself with tpw_stream_link().\n\n On by default, which is what every existing caller already gets. Must\n be called before the format is set; the routing mode is fixed once the\n stream connects. Mutually exclusive with tpw_stream_set_target():\n whichever of the two is called second returns TPW_STREAM_ERR_INVALID_ARG.\n\n @param stream The stream to configure, before its format is set.\n @param enable false to opt out of autoconnect (manual wiring via tpw_stream_link()); true restores the default.\n @return TPW_STREAM_OK, or TPW_STREAM_ERR_INVALID_ARG (NULL stream, format already set, or a target already set)."]
+    #[doc = " @brief Turns automatic connection off, so the application wires the\n        stream itself with tpw_stream_link().\n\n On by default, which is what every existing caller already gets. Must\n be called before the format is set; the routing mode is fixed once the\n stream connects. Mutually exclusive with a target rather than with the\n setter: turning autoconnect off while one is set is refused, as is\n naming a target while it is off. Clear the target with\n tpw_stream_set_target(NULL) to move from either to the other.\n\n @param stream The stream to configure, before its format is set.\n @param enable false to opt out of autoconnect (manual wiring via tpw_stream_link()); true puts the stream back under the session manager, and leaves any target already set in place.\n @return TPW_STREAM_OK, or TPW_STREAM_ERR_INVALID_ARG for a NULL `stream`, a format already set, or `enable` false while a target is set."]
     pub fn tpw_stream_set_autoconnect(stream: tpw_stream_h, enable: bool) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {

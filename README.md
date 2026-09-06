@@ -9,12 +9,12 @@ filters.
 | [`tinypipewire-sys`](tinypipewire-sys) | Raw FFI declarations, generated from the C headers by bindgen |
 | [`tinypipewire`](tinypipewire) | The safe interface: owned handles, `Result`, and Rust closures for the C callbacks |
 
-The bindings track C API 0.9.0, pinned as a submodule under `vendor/`.
+The bindings track C API 0.9.1, pinned as a submodule under `vendor/`.
 
 The two crates carry their own semver rather than the C library's, because a
 change to the Rust interface and a change to the C API are different events and
 each needs a version to say so. `tinypipewire-sys` names the C release it binds
-as build metadata, as in `0.1.0+tpw0.9.0`; that metadata is ignored when
+as build metadata, as in `0.1.0+tpw0.9.1`; that metadata is ignored when
 resolving versions and is there to be read. Which C API a build actually got is
 reported at runtime by `tinypipewire::C_API_VERSION`, taken from the headers
 themselves.
