@@ -1,4 +1,4 @@
 [submodule "vendor/tinypipewire"]
 	path = vendor/tinypipewire
-	url = https://github.com/sangchul1011/tinypipewire.git
+	url = https://github.com/tinyPipeWire/tinypipewire.git
 	branch = main
