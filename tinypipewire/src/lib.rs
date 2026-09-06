@@ -69,7 +69,7 @@
 //! builds the pinned copy under `vendor/` when that fails or when the
 //! `vendored` feature is on.
 //!
-//! [tinypipewire]: https://github.com/sangchul1011/tinypipewire
+//! [tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
 
 #![warn(missing_docs)]
 

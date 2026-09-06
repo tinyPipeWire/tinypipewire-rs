@@ -111,4 +111,4 @@ headers. Either way the crate compiles but cannot be linked, so it is for
 
 MIT, matching the C library — see [LICENSE](LICENSE).
 
-[tinypipewire]: https://github.com/sangchul1011/tinypipewire
+[tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
