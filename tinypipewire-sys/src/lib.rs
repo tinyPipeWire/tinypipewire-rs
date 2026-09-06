@@ -4,7 +4,7 @@
 //! Everything here is generated from the C headers and is `unsafe` to call.
 //! Use the `tinypipewire` crate for a safe interface.
 //!
-//! [tinypipewire]: https://github.com/sangchul1011/tinypipewire
+//! [tinypipewire]: https://github.com/tinyPipeWire/tinypipewire
 
 #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
 #![allow(clippy::all)]
