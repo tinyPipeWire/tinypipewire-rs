@@ -45,7 +45,7 @@ jobs:
 
       - name: Install tinypipewire
         run: |
-          meson setup build vendor/tinypipewire \
+          meson setup build tinypipewire-sys/vendor/tinypipewire \
             -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
           sudo meson install -C build
           sudo ldconfig
@@ -71,7 +71,7 @@ jobs:
 
       - name: Install tinypipewire
         run: |
-          meson setup build vendor/tinypipewire \
+          meson setup build tinypipewire-sys/vendor/tinypipewire \
             -Dexamples=false -Dtests=false -Dutils=false --prefix=/usr
           sudo meson install -C build
           sudo ldconfig
@@ -205,3 +205,23 @@ jobs:
 
       - name: Build with bindgen turned off
         run: cargo build -p tinypipewire --no-default-features --features vendored
+
+  package:
+    name: Verify the published package builds on its own
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config \
+            libpipewire-0.3-dev libspa-0.2-dev
+
+      # cargo package unpacks the crate it just built and compiles that copy,
+      # so this fails if the vendored C sources do not ship inside it.
+      - name: Package and build the extracted crate
+        run: cargo package -p tinypipewire-sys --features vendored
+
