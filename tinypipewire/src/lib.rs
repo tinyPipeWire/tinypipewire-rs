@@ -66,7 +66,7 @@
 //! # Linking
 //!
 //! The `tinypipewire-sys` crate finds the C library through `pkg-config`, and
-//! builds the pinned copy under `vendor/` when that fails or when the
+//! builds the copy tinypipewire-sys ships when that fails or when the
 //! `vendored` feature is on.
 //!
 //! [tinypipewire]: https://github.com/tinyPipeWire/tinypipewire

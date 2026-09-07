@@ -73,19 +73,21 @@ fn link() -> Vec<PathBuf> {
     {
         Ok(lib) => lib.include_paths,
         Err(err) => {
-            println!("cargo:warning=pkg-config could not find tinypipewire ({err}); building the vendored copy instead");
+            println!("cargo:warning=pkg-config could not find an installed tinypipewire ({err}); building the vendored copy instead");
             build_vendored()
         }
     }
 }
 
-/// Builds the pinned C sources under `vendor/` with meson and links them
-/// statically. PipeWire itself still has to come from the system.
+/// Builds the pinned C sources under this crate's `vendor/` with meson and
+/// links them statically. PipeWire itself still comes from the system.
 fn build_vendored() -> Vec<PathBuf> {
     let src = vendor_dir();
     assert!(
         src.join("meson.build").is_file(),
-        "vendor/tinypipewire is empty; run `git submodule update --init`"
+        "the vendored C sources are missing from {}. In a git checkout they \
+         are a submodule: run `git submodule update --init`.",
+        src.display()
     );
 
     let build_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("vendor-build");
@@ -120,12 +122,10 @@ fn build_vendored() -> Vec<PathBuf> {
     vec![src.join("include"), build_dir.join("include")]
 }
 
-/// The pinned C sources checked out as a submodule.
+/// The pinned C sources, which sit inside this crate so that a published
+/// package carries them.
 fn vendor_dir() -> PathBuf {
-    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .parent()
-        .expect("the crate always sits inside the workspace")
-        .join("vendor/tinypipewire")
+    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("vendor/tinypipewire")
 }
 
 fn run(cmd: &mut Command) {

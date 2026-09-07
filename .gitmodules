@@ -1,4 +1,4 @@
-[submodule "vendor/tinypipewire"]
-	path = vendor/tinypipewire
+[submodule "tinypipewire-sys/vendor/tinypipewire"]
+	path = tinypipewire-sys/vendor/tinypipewire
 	url = https://github.com/tinyPipeWire/tinypipewire.git
 	branch = main
