@@ -22,7 +22,7 @@ bindgen = ["dep:bindgen"]
 vendored = []
 
 [build-dependencies]
-bindgen = { version = "0.71", optional = true }
+bindgen = { version = "0.73", optional = true }
 pkg-config = "0.3"
 
 [package.metadata.docs.rs]
