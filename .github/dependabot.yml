@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+
+  # The workspace root; both crates are read from there. Cargo.lock is not
+  # committed, so this only moves a requirement a new release falls outside.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+
+# The vendored C library is deliberately not tracked. Dependabot would move
+# the pin to the tip of main, while the pin follows release tags and a move
+# also requires regenerating the committed bindings.
