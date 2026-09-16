@@ -159,8 +159,8 @@ fn a_filter_takes_ports_and_starts() {
         .expect("output port");
 
     assert_ne!(input, output, "two ports must not share an identity");
-    assert_eq!(input.kind(), Some(DataType::Audio));
-    assert_eq!(output.kind(), Some(DataType::Audio));
+    assert_eq!(input.data_type(), Some(DataType::Audio));
+    assert_eq!(output.data_type(), Some(DataType::Audio));
 
     filter.start().expect("start");
     filter.stop(false).expect("stop");

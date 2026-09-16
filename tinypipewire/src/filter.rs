@@ -292,7 +292,7 @@ impl Port {
     }
 
     /// What kind of data this port carries.
-    pub fn kind(self) -> Option<DataType> {
+    pub fn data_type(self) -> Option<DataType> {
         DataType::from_raw(unsafe { sys::tpw_filter_port_get_type(self.as_raw()) })
     }
 

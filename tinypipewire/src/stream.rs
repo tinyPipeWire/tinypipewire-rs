@@ -119,14 +119,14 @@ impl Stream {
         })
     }
 
-    /// The two capture constructors differ only in the media type they ask
+    /// The two capture constructors differ only in the data type they ask
     /// for; the C API rejects the signal and event types here.
-    fn capture<F>(kind: DataType, callback: F) -> Result<Self>
+    fn capture<F>(data_type: DataType, callback: F) -> Result<Self>
     where
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
         Self::create(Delivery::Capture(Box::new(callback)), |state| unsafe {
-            sys::tpw_stream_create(kind.to_raw(), Some(on_capture), state)
+            sys::tpw_stream_create(data_type.to_raw(), Some(on_capture), state)
         })
     }
 
@@ -212,7 +212,7 @@ impl Stream {
     }
 
     /// Lists every node [`Routing::Autoconnect`] would accept for this
-    /// stream's media type.
+    /// stream's data type.
     ///
     /// An empty list means the graph holds no such node; a graph that could
     /// not be reached is an error instead, [`Error::Timeout`] when the registry
