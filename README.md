@@ -9,12 +9,12 @@ filters.
 | [`tinypipewire-sys`](tinypipewire-sys) | Raw FFI declarations, generated from the C headers by bindgen |
 | [`tinypipewire`](tinypipewire) | The safe interface: owned handles, `Result`, and Rust closures for the C callbacks |
 
-The bindings track C API 0.9.1, pinned as a submodule under `tinypipewire-sys/vendor/`.
+The bindings track C API 0.11.0, pinned as a submodule under `tinypipewire-sys/vendor/`.
 
 The two crates carry their own semver rather than the C library's, because a
 change to the Rust interface and a change to the C API are different events and
 each needs a version to say so. `tinypipewire-sys` names the C release it binds
-as build metadata, as in `0.1.0+tpw0.9.1`; that metadata is ignored when
+as build metadata, as in `0.1.0+tpw0.11.0`; that metadata is ignored when
 resolving versions and is there to be read. Which C API a build actually got is
 reported at runtime by `tinypipewire::C_API_VERSION`, taken from the headers
 themselves.
@@ -23,7 +23,7 @@ themselves.
 
 PipeWire is Linux-only, so the crates build and run there. Building needs
 `libpipewire-0.3` >= 0.3.50 development files, and either `tinypipewire`
->= 0.9.0 installed or the Meson toolchain to build the vendored copy.
+>= 0.11.0 installed or the Meson toolchain to build the vendored copy.
 
 An older installed `tinypipewire` is not an error. pkg-config passes over it
 and the build falls back to the vendored sources, saying so in a warning, so
@@ -45,10 +45,10 @@ tinypipewire = "0.1"
 Capture from the default microphone for five seconds:
 
 ```rust
-use tinypipewire::{AudioConfig, Stream, StreamType};
+use tinypipewire::{AudioConfig, Stream};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let stream = Stream::new_capture(StreamType::Audio, |buf| {
+    let stream = Stream::audio_capture(|buf| {
         if let Some(data) = buf.data() {
             println!("{} bytes (pts={:?} ns)", data.len(), buf.pts());
         }
@@ -62,10 +62,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Every callback runs on the PipeWire thread loop the handle owns, so each
-closure is `Send + 'static`, and the buffers it receives borrow the graph's
-memory for one call only. Dropping a `Stream` or `Filter` stops it and joins
-that thread.
+Every callback runs on a thread the handle owns, so each closure is
+`Send + 'static`, and the buffers it receives borrow the graph's memory for
+one call only. Buffer callbacks run on the real-time data thread and must not
+block. Dropping a `Stream` or `Filter` stops it and joins its threads.
 
 ## Examples
 

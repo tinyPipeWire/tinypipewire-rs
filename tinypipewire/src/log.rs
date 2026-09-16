@@ -73,7 +73,8 @@ pub fn set_level(level: LogLevel) {
 /// Routes the library's diagnostics to `callback`, replacing any callback set
 /// before. With none set, messages go to stderr.
 ///
-/// This is process-wide, and the callback may run on PipeWire's loop thread.
+/// This is process-wide, and the callback can run on any thread, a real-time
+/// data thread included, so it must not block.
 pub fn set_callback<F>(callback: F)
 where
     F: FnMut(Record<'_>) + Send + 'static,

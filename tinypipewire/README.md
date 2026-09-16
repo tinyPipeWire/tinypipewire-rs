@@ -15,10 +15,10 @@ tinypipewire = "0.1"
 Capture from the default microphone for five seconds:
 
 ```rust
-use tinypipewire::{AudioConfig, Stream, StreamType};
+use tinypipewire::{AudioConfig, Stream};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let stream = Stream::new_capture(StreamType::Audio, |buf| {
+    let stream = Stream::audio_capture(|buf| {
         if let Some(data) = buf.data() {
             println!("{} bytes (pts={:?} ns)", data.len(), buf.pts());
         }
@@ -32,15 +32,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Every callback runs on the PipeWire thread loop the handle owns, so each
-closure is `Send + 'static`, and the buffers it receives borrow the graph's
-memory for one call only. Dropping a `Stream` or `Filter` stops it and joins
-that thread.
+Every callback runs on a thread the handle owns, so each closure is
+`Send + 'static`, and the buffers it receives borrow the graph's memory for
+one call only. Buffer callbacks run on the real-time data thread and must not
+block. Dropping a `Stream` or `Filter` stops it and joins its threads.
 
 ## Building
 
 The C library comes from one of two places. By default `tinypipewire-sys`
-probes pkg-config for an installed `tinypipewire` >= 0.9.0; the `vendored`
+probes pkg-config for an installed `tinypipewire` >= 0.11.0; the `vendored`
 feature builds the C sources the `-sys` crate ships, which needs Meson, Ninja
 and `libpipewire-0.3` >= 0.3.50 development files.
 

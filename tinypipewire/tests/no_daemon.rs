@@ -1,8 +1,8 @@
 //! Checks that need no PipeWire daemon: pure conversions and error mapping.
 
 use tinypipewire::{
-    AudioConfig, Error, EventKind, PixelFormat, PortDirection, PortMemory, SampleFormat,
-    StreamType, VideoConfig, C_API_VERSION,
+    AudioConfig, DataType, Error, EventKind, PixelFormat, PortDirection, PortMemory, SampleFormat,
+    VideoConfig, C_API_VERSION,
 };
 
 #[test]
@@ -13,6 +13,10 @@ fn c_errors_carry_their_code_and_a_message() {
         (Error::InvalidFormat, -3),
         (Error::NotConfigured, -4),
         (Error::SourceUnavailable, -5),
+        (Error::InCallback, -6),
+        (Error::NotFound, -7),
+        (Error::Timeout, -8),
+        (Error::NoMemory, -9),
     ];
     for (error, code) in mapped {
         assert_eq!(error.code(), Some(code));
@@ -51,8 +55,8 @@ fn config_builders_keep_what_they_are_given() {
 
 #[test]
 fn enum_variants_stay_distinct() {
-    assert_ne!(StreamType::Audio, StreamType::Video);
-    assert_ne!(StreamType::Signal, StreamType::Event);
+    assert_ne!(DataType::Audio, DataType::Video);
+    assert_ne!(DataType::Signal, DataType::Event);
     assert_ne!(PortDirection::Input, PortDirection::Output);
     assert_ne!(EventKind::Midi, EventKind::Property);
     assert_eq!(PortMemory::default(), PortMemory::Auto);
@@ -61,5 +65,5 @@ fn enum_variants_stay_distinct() {
 #[test]
 fn the_bound_c_api_is_the_pinned_one() {
     assert_eq!(C_API_VERSION.0, 0);
-    assert!(C_API_VERSION.1 >= 9);
+    assert!(C_API_VERSION.1 >= 11);
 }

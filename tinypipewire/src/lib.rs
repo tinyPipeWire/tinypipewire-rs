@@ -52,11 +52,17 @@
 //!
 //! # Threads and lifetimes
 //!
-//! Every callback runs on the PipeWire thread loop the handle owns, so each
-//! closure is `Send + 'static`. The buffers passed in borrow the graph's
-//! memory for the length of one call: copy out anything that has to outlive
-//! it. Dropping a [`Stream`] or [`Filter`] stops it and joins that thread, so
-//! no callback can still be running afterwards.
+//! Every callback runs on a thread the handle owns, so each closure is
+//! `Send + 'static`. Buffer and processing callbacks run on PipeWire's
+//! real-time data thread and must not block; error callbacks run on the
+//! handle's loop thread. The buffers passed in borrow the graph's memory for
+//! the length of one call: copy out anything that has to outlive it.
+//!
+//! A callback cannot make every call on its own handle. Those that would wait
+//! on the thread running it fail with [`Error::InCallback`], and each handle's
+//! documentation lists them. Dropping a [`Stream`] or [`Filter`] stops it and
+//! joins its threads, so no callback can still be running afterwards; dropped
+//! from inside its own callback, it is left running instead.
 //!
 //! Handle methods take `&self` even when they change the handle, because the
 //! C library locks PipeWire's thread loop inside each call. That is interior
@@ -87,8 +93,8 @@ pub mod log;
 pub use error::{Error, Result};
 pub use filter::{Event, EventKind, Filter, Port, PortBuffer, PortDirection};
 pub use format::{
-    AudioConfig, DmabufPlane, PixelFormat, PortMemory, Routing, SampleFormat, StreamType,
-    TargetInfo, VideoConfig, VideoFormatInfo,
+    AudioConfig, DataType, DmabufPlane, PixelFormat, PortMemory, Routing, SampleFormat, TargetInfo,
+    VideoConfig, VideoFormatInfo,
 };
 pub use stream::{CaptureBuffer, PlaybackBuffer, Stream};
 

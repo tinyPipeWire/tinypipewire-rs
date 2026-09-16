@@ -6,35 +6,40 @@ use std::os::fd::RawFd;
 use tinypipewire_sys as sys;
 
 /// What kind of data a stream or filter port carries.
+///
+/// Audio and video are media, while a signal and an event are not, which is
+/// why this is a data type. Streams carry only audio or video.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum StreamType {
+pub enum DataType {
     /// Raw audio samples.
     Audio,
     /// Raw video frames.
     Video,
-    /// A filter-only port of application-defined samples.
+    /// A filter-only port of one 32-bit float per frame, such as a sensor
+    /// reading.
     Signal,
-    /// A filter-only port of timed events such as MIDI.
+    /// A filter-only port of discrete timestamped items, such as MIDI or a
+    /// property.
     Event,
 }
 
-impl StreamType {
-    pub(crate) fn to_raw(self) -> sys::tpw_stream_type {
+impl DataType {
+    pub(crate) fn to_raw(self) -> sys::tpw_data_type {
         match self {
-            StreamType::Audio => sys::TPW_STREAM_TYPE_AUDIO,
-            StreamType::Video => sys::TPW_STREAM_TYPE_VIDEO,
-            StreamType::Signal => sys::TPW_STREAM_TYPE_SIGNAL,
-            StreamType::Event => sys::TPW_STREAM_TYPE_EVENT,
+            DataType::Audio => sys::TPW_DATA_AUDIO,
+            DataType::Video => sys::TPW_DATA_VIDEO,
+            DataType::Signal => sys::TPW_DATA_SIGNAL,
+            DataType::Event => sys::TPW_DATA_EVENT,
         }
     }
 
-    pub(crate) fn from_raw(raw: sys::tpw_stream_type) -> Option<Self> {
+    pub(crate) fn from_raw(raw: sys::tpw_data_type) -> Option<Self> {
         match raw {
-            sys::TPW_STREAM_TYPE_AUDIO => Some(StreamType::Audio),
-            sys::TPW_STREAM_TYPE_VIDEO => Some(StreamType::Video),
-            sys::TPW_STREAM_TYPE_SIGNAL => Some(StreamType::Signal),
-            sys::TPW_STREAM_TYPE_EVENT => Some(StreamType::Event),
+            sys::TPW_DATA_AUDIO => Some(DataType::Audio),
+            sys::TPW_DATA_VIDEO => Some(DataType::Video),
+            sys::TPW_DATA_SIGNAL => Some(DataType::Signal),
+            sys::TPW_DATA_EVENT => Some(DataType::Event),
             _ => None,
         }
     }

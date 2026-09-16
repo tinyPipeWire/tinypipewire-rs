@@ -2,6 +2,7 @@
 
 use std::cell::UnsafeCell;
 use std::ffi::{c_int, c_void};
+use std::mem::ManuallyDrop;
 use std::slice;
 use std::sync::Mutex;
 
@@ -9,10 +10,12 @@ use tinypipewire_sys as sys;
 
 use crate::error::{check, Error, Result};
 use crate::format::{
-    AudioConfig, DmabufPlane, PortMemory, Routing, StreamType, TargetInfo, VideoConfig,
+    AudioConfig, DataType, DmabufPlane, PortMemory, Routing, TargetInfo, VideoConfig,
     VideoFormatInfo,
 };
-use crate::util::{collect_list, guard, state, try_collect_list, with_cstr};
+use crate::util::{
+    collect_list, guard_callback, in_callback_of, state, try_collect_list, with_cstr,
+};
 
 type CaptureFn = Box<dyn FnMut(CaptureBuffer<'_>) + Send>;
 type PlaybackFn = Box<dyn FnMut(&mut PlaybackBuffer<'_>) + Send>;
@@ -42,6 +45,23 @@ struct StreamState {
 ///
 /// Dropping the stream stops it and releases every resource behind it.
 ///
+/// # Calls from callbacks
+///
+/// The buffer callback runs on PipeWire's real-time data thread, so it must
+/// not block. The C library refuses the calls that would take the stream's
+/// loop lock from there with [`Error::InCallback`]: start, stop, link, unlink,
+/// the target queries and the format setters.
+///
+/// The error callback runs on the stream's loop thread instead. A stop without
+/// drain and [`Stream::unlink`] work there, but a draining stop, link, the
+/// target queries and the format setters would wait on that same thread and
+/// are refused with [`Error::InCallback`].
+///
+/// Dropping the stream from inside either callback cannot tear it down, since
+/// that would join the thread running the callback. The C library leaves the
+/// stream running instead, and this binding leaks what the callbacks use, so
+/// drop it after the callback returns.
+///
 /// # Shared references
 ///
 /// Every method takes `&self`, including the ones that change the stream.
@@ -52,8 +72,9 @@ struct StreamState {
 /// stream can be moved to another thread and driven from there.
 pub struct Stream {
     handle: sys::tpw_stream_h,
-    // Boxed so the address handed to C stays put while the Stream moves.
-    state: Box<StreamState>,
+    // Boxed so the address handed to C stays put while the Stream moves, and
+    // released by hand because a drop inside a callback must leak it.
+    state: ManuallyDrop<Box<StreamState>>,
 }
 
 // The C library takes PipeWire's thread-loop lock inside its own calls, so a
@@ -70,7 +91,7 @@ impl Stream {
     where
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
-        Self::capture(StreamType::Audio, callback)
+        Self::capture(DataType::Audio, callback)
     }
 
     /// Creates a stream that captures video.
@@ -81,7 +102,7 @@ impl Stream {
     where
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
-        Self::capture(StreamType::Video, callback)
+        Self::capture(DataType::Video, callback)
     }
 
     /// Creates an audio playback stream, emitting to an output device.
@@ -100,7 +121,7 @@ impl Stream {
 
     /// The two capture constructors differ only in the media type they ask
     /// for; the C API rejects the signal and event types here.
-    fn capture<F>(kind: StreamType, callback: F) -> Result<Self>
+    fn capture<F>(kind: DataType, callback: F) -> Result<Self>
     where
         F: FnMut(CaptureBuffer<'_>) + Send + 'static,
     {
@@ -121,7 +142,10 @@ impl Stream {
         if handle.is_null() {
             return Err(Error::CreateFailed);
         }
-        Ok(Stream { handle, state })
+        Ok(Stream {
+            handle,
+            state: ManuallyDrop::new(state),
+        })
     }
 
     /// Registers the callback invoked when the stream's source is lost.
@@ -169,11 +193,30 @@ impl Stream {
         }
     }
 
+    /// Declares the media role this stream plays, such as `"Music"`, `"Movie"`,
+    /// `"Communication"` or `"Notification"`, or clears it with `None`.
+    ///
+    /// Like a target, the role is a hint to the session manager's role policy,
+    /// and nothing acts on it without one. It is read when the format connects
+    /// the stream, so set it before [`Stream::set_audio_config`] or
+    /// [`Stream::set_video_config`]; a role set later does not reach the node.
+    /// Unlike a target, it is accepted under either [`Routing`].
+    pub fn set_role(&self, role: Option<&str>) -> Result<()> {
+        match role {
+            Some(role) => with_cstr(role, |role| unsafe {
+                sys::tpw_stream_set_role(self.handle, role.as_ptr())
+            })
+            .and_then(check),
+            None => check(unsafe { sys::tpw_stream_set_role(self.handle, std::ptr::null()) }),
+        }
+    }
+
     /// Lists every node [`Routing::Autoconnect`] would accept for this
     /// stream's media type.
     ///
     /// An empty list means the graph holds no such node; a graph that could
-    /// not be reached is an error instead.
+    /// not be reached is an error instead, [`Error::Timeout`] when the registry
+    /// did not answer in time.
     pub fn targets(&self) -> Result<Vec<TargetInfo>> {
         unsafe {
             try_collect_list(
@@ -189,7 +232,8 @@ impl Stream {
     ///
     /// Every entry is one [`Stream::set_video_config`] accepts for that
     /// target. Reading them opens the device briefly, unlike the free lookup
-    /// [`Stream::targets`] does.
+    /// [`Stream::targets`] does. A target naming no node is
+    /// [`Error::NotFound`].
     pub fn target_video_formats(&self, target: Option<&str>) -> Result<Vec<VideoFormatInfo>> {
         let query = |name: *const std::ffi::c_char| unsafe {
             try_collect_list(
@@ -208,6 +252,11 @@ impl Stream {
 
     /// Links this stream's port to `target` by hand, with no session manager
     /// involved. Requires [`Routing::Manual`] and the stream started.
+    ///
+    /// Linking before the start is [`Error::NotConfigured`], and a target
+    /// naming no node is [`Error::NotFound`]. [`Error::Timeout`] means the
+    /// ports or a link did not appear in time, and [`Error::InvalidFormat`]
+    /// that a link failed to negotiate.
     pub fn link(&self, target: &str) -> Result<()> {
         with_cstr(target, |target| unsafe {
             sys::tpw_stream_link(self.handle, target.as_ptr())
@@ -215,7 +264,8 @@ impl Stream {
         .and_then(check)
     }
 
-    /// Drops the links [`Stream::link`] made.
+    /// Drops the links [`Stream::link`] made, or reports
+    /// [`Error::NotConfigured`] when there are none.
     pub fn unlink(&self) -> Result<()> {
         check(unsafe { sys::tpw_stream_unlink(self.handle) })
     }
@@ -267,9 +317,17 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
+        // The C library refuses to destroy a stream from its own callback and
+        // keeps it running, so the state that callback uses is leaked instead.
+        if in_callback_of(&**self.state as *const StreamState as *const c_void) {
+            return;
+        }
         // Destroying joins the loop thread, so no callback can be running by
         // the time the boxed state goes with it.
-        unsafe { sys::tpw_stream_destroy(self.handle) };
+        unsafe {
+            sys::tpw_stream_destroy(self.handle);
+            ManuallyDrop::drop(&mut self.state);
+        }
     }
 }
 
@@ -384,7 +442,7 @@ unsafe extern "C" fn on_capture(
     buf: *const sys::tpw_stream_buffer,
     user_data: *mut c_void,
 ) {
-    guard(|| {
+    guard_callback(user_data, || {
         let (Some(state), Some(raw)) = (state::<StreamState>(user_data), buf.as_ref()) else {
             return;
         };
@@ -399,7 +457,7 @@ unsafe extern "C" fn on_playback(
     buf: *mut sys::tpw_stream_playback_buffer,
     user_data: *mut c_void,
 ) {
-    guard(|| {
+    guard_callback(user_data, || {
         let (Some(state), Some(raw)) = (state::<StreamState>(user_data), buf.as_mut()) else {
             return;
         };
@@ -414,7 +472,7 @@ unsafe extern "C" fn on_error(
     error_code: c_int,
     user_data: *mut c_void,
 ) {
-    guard(|| {
+    guard_callback(user_data, || {
         let Some(state) = state::<StreamState>(user_data) else {
             return;
         };

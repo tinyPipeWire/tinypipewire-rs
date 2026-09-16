@@ -1,12 +1,34 @@
+use std::cell::Cell;
 use std::ffi::{c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::error::{check, Error, Result};
 
+thread_local! {
+    // The state of the handle whose callback this thread is running, if any.
+    static RUNNING: Cell<*const c_void> = const { Cell::new(std::ptr::null()) };
+}
+
 /// Runs a callback trampoline, swallowing a panic rather than letting it
 /// unwind into C.
 pub(crate) fn guard(body: impl FnOnce()) {
     let _ = catch_unwind(AssertUnwindSafe(body));
+}
+
+/// Runs a handle's callback trampoline under [`guard`], recording `owner` as
+/// the handle whose callback this thread is running.
+pub(crate) fn guard_callback(owner: *mut c_void, body: impl FnOnce()) {
+    let outer = RUNNING.with(|running| running.replace(owner));
+    guard(body);
+    RUNNING.with(|running| running.set(outer));
+}
+
+/// True while this thread is inside a callback of the handle owning `owner`.
+///
+/// The C library refuses to destroy a handle from its own callback and leaves
+/// it running, so a `Drop` there must keep the state that callback uses.
+pub(crate) fn in_callback_of(owner: *const c_void) -> bool {
+    RUNNING.with(|running| running.get() == owner)
 }
 
 /// Borrows a Rust string as a C string for the duration of `body`.
