@@ -6,18 +6,21 @@
 //!
 //! What these cover that the daemon-free tests cannot: the callback
 //! trampolines actually firing, the target list coming back with real
-//! entries, and a handle being dropped while its loop thread still runs.
+//! entries, a handle being dropped while its loop thread still runs, and the
+//! calls the C library refuses from inside a callback.
 //!
 //! Routing here goes through the session manager, the path an application
 //! normally takes. Manual routing — autoconnect off, then `link()` — is
 //! covered only by the C library's hardware suite, and a stream's own ports
 //! never appear in a bare headless graph for it to link.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tinypipewire::{AudioConfig, Filter, PortDirection, Routing, SampleFormat, Stream, StreamType};
+use tinypipewire::{
+    AudioConfig, DataType, Error, Filter, PortDirection, Routing, SampleFormat, Stream,
+};
 
 /// How long to wait for the graph to start handing out cycles.
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -156,9 +159,144 @@ fn a_filter_takes_ports_and_starts() {
         .expect("output port");
 
     assert_ne!(input, output, "two ports must not share an identity");
-    assert_eq!(input.kind(), Some(StreamType::Audio));
-    assert_eq!(output.kind(), Some(StreamType::Audio));
+    assert_eq!(input.kind(), Some(DataType::Audio));
+    assert_eq!(output.kind(), Some(DataType::Audio));
 
     filter.start().expect("start");
     filter.stop(false).expect("stop");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_role_is_accepted_under_either_routing() {
+    let stream = Stream::playback(|_| {}).expect("a playback stream needs a daemon");
+
+    // A role is only a hint, so unlike a target it is not tied to autoconnect.
+    stream.set_routing(Routing::Manual).expect("manual routing");
+    stream
+        .set_role(Some("Music"))
+        .expect("a role under manual routing");
+    stream.set_role(None).expect("clearing the role");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_role(Some("Notification"))
+        .expect("a role under autoconnect");
+
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the sink is stereo f32");
+    stream.start().expect("start");
+    stream.stop(false).expect("stop");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn unlinking_with_nothing_linked_is_not_configured() {
+    let stream = Stream::audio_capture(|_| {}).expect("a stream needs a daemon");
+    assert_eq!(stream.unlink(), Err(Error::NotConfigured));
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_filter_port_linked_to_a_missing_node_is_not_found() {
+    let filter = Filter::new("tpw-smoke-link", |_| {}).expect("a filter needs a daemon");
+    let input = filter
+        .add_audio_port(
+            PortDirection::Input,
+            &AudioConfig::new(48_000, 2).with_format(SampleFormat::F32),
+        )
+        .expect("input port");
+
+    assert_eq!(input.link(&sink()), Err(Error::NotConfigured));
+    filter.start().expect("start");
+    assert_eq!(input.link("tpw-smoke-no-such-node"), Err(Error::NotFound));
+    filter.stop(false).expect("stop");
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_call_from_the_buffer_callback_is_refused() {
+    let shared: Arc<Mutex<Option<Stream>>> = Arc::new(Mutex::new(None));
+    let refused = Arc::new(AtomicI32::new(0));
+
+    let (slot, code) = (Arc::clone(&shared), Arc::clone(&refused));
+    let stream = Stream::playback(move |_| {
+        if let Ok(guard) = slot.try_lock() {
+            if let Some(Err(error)) = guard.as_ref().map(|stream| stream.stop(false)) {
+                code.store(error.code().unwrap_or(0), Ordering::Relaxed);
+            }
+        }
+    })
+    .expect("a playback stream needs a daemon");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the sink is stereo f32");
+    stream.start().expect("start");
+    *shared.lock().unwrap() = Some(stream);
+
+    wait_for(|| refused.load(Ordering::Relaxed) != 0);
+    let stream = shared
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the stream is still shared");
+    stream
+        .stop(false)
+        .expect("a stop outside the callback still works");
+    assert_eq!(
+        refused.load(Ordering::Relaxed),
+        Error::InCallback.code().unwrap(),
+        "a stop from the data thread has to be refused"
+    );
+}
+
+#[test]
+#[ignore = "needs a running PipeWire daemon with a null sink"]
+fn a_stream_dropped_from_its_own_callback_keeps_what_it_runs() {
+    let shared: Arc<Mutex<Option<Stream>>> = Arc::new(Mutex::new(None));
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let calls_after = Arc::new(AtomicUsize::new(0));
+
+    let (slot, done, after) = (
+        Arc::clone(&shared),
+        Arc::clone(&dropped),
+        Arc::clone(&calls_after),
+    );
+    let stream = Stream::playback(move |_| {
+        if done.load(Ordering::Relaxed) > 0 {
+            after.fetch_add(1, Ordering::Relaxed);
+        } else if let Ok(mut guard) = slot.try_lock() {
+            if let Some(stream) = guard.take() {
+                drop(stream);
+                done.store(1, Ordering::Relaxed);
+            }
+        }
+    })
+    .expect("a playback stream needs a daemon");
+    stream
+        .set_routing(Routing::Autoconnect(Some(&sink())))
+        .expect("target the sink");
+    stream
+        .set_audio_config(&AudioConfig::new(48_000, 2).with_format(SampleFormat::F32))
+        .expect("the sink is stereo f32");
+    stream.start().expect("start");
+    *shared.lock().unwrap() = Some(stream);
+
+    // The C library leaves the stream running, so the callback keeps being
+    // called; a freed closure would crash here instead.
+    wait_for(|| calls_after.load(Ordering::Relaxed) > 0);
+    assert_eq!(
+        dropped.load(Ordering::Relaxed),
+        1,
+        "the callback never dropped the stream"
+    );
+    assert!(
+        calls_after.load(Ordering::Relaxed) > 0,
+        "the leaked stream stopped running"
+    );
 }

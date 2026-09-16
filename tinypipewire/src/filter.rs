@@ -3,6 +3,7 @@
 
 use std::cell::UnsafeCell;
 use std::ffi::{c_int, c_void, CStr, CString};
+use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 use std::slice;
 use std::sync::Mutex;
@@ -11,10 +12,10 @@ use std::time::Duration;
 use tinypipewire_sys as sys;
 
 use crate::error::{check, Error, Result};
-use crate::format::{
-    AudioConfig, DmabufPlane, PortMemory, StreamType, VideoConfig, VideoFormatInfo,
+use crate::format::{AudioConfig, DataType, DmabufPlane, PortMemory, VideoConfig, VideoFormatInfo};
+use crate::util::{
+    collect_list, guard_callback, in_callback_of, state, try_collect_list, with_cstr,
 };
-use crate::util::{collect_list, guard, state, try_collect_list, with_cstr};
 
 type ProcessFn = Box<dyn FnMut(&mut [PortBuffer]) + Send>;
 type ErrorFn = Box<dyn FnMut(Option<Port>, Error) + Send>;
@@ -55,6 +56,23 @@ impl PortDirection {
 ///
 /// Dropping the filter stops it and releases every port behind it.
 ///
+/// # Calls from callbacks
+///
+/// The processing callback runs on PipeWire's real-time data thread, so it
+/// must not block. Pushing data and events and reading DMABUF planes belong
+/// there, but start, stop, [`Port::link`], [`Port::unlink`] and
+/// [`Filter::target_video_formats`] are refused with [`Error::InCallback`].
+///
+/// The error callback runs on the filter's loop thread, once per source an
+/// input port loses, and never for the application's own unlink, stop or
+/// drop. A stop without drain and [`Port::unlink`] work there, but a draining
+/// stop, [`Port::link`] and [`Filter::target_video_formats`] are refused with
+/// [`Error::InCallback`].
+///
+/// Dropping the filter from inside either callback cannot tear it down. The C
+/// library leaves the filter running instead, and this binding leaks what the
+/// callbacks use, so drop it after the callback returns.
+///
 /// # Shared references
 ///
 /// Every method takes `&self`, as on [`Stream`](crate::Stream) and for the
@@ -63,8 +81,9 @@ impl PortDirection {
 /// thread safety. `Filter` is `Send` but not `Sync`.
 pub struct Filter {
     handle: sys::tpw_filter_h,
-    // Boxed so the address handed to C stays put while the Filter moves.
-    state: Box<FilterState>,
+    // Boxed so the address handed to C stays put while the Filter moves, and
+    // released by hand because a drop inside a callback must leak it.
+    state: ManuallyDrop<Box<FilterState>>,
 }
 
 // As for Stream: the C library locks PipeWire's thread loop internally, so a
@@ -72,10 +91,12 @@ pub struct Filter {
 unsafe impl Send for Filter {}
 
 impl Filter {
-    /// Creates a filter named `name`.
+    /// Creates a filter whose node is named `name`, which is how other
+    /// applications and [`Port::link`] find it. An empty name leaves
+    /// PipeWire's default, the process name.
     ///
-    /// `callback` runs once per graph cycle on PipeWire's loop thread, with
-    /// one entry per port.
+    /// `callback` runs once per graph cycle on PipeWire's real-time data
+    /// thread, with one entry per port.
     pub fn new<F>(name: &str, callback: F) -> Result<Self>
     where
         F: FnMut(&mut [PortBuffer]) + Send + 'static,
@@ -91,7 +112,10 @@ impl Filter {
         if handle.is_null() {
             return Err(Error::CreateFailed);
         }
-        Ok(Filter { handle, state })
+        Ok(Filter {
+            handle,
+            state: ManuallyDrop::new(state),
+        })
     }
 
     /// Registers the callback invoked when a port's peer is lost.
@@ -159,6 +183,9 @@ impl Filter {
 
     /// Lists the video formats `target` can deliver to a video port of this
     /// filter, so a port can be added with a format the device really has.
+    ///
+    /// A target naming no node is [`Error::NotFound`], and a query that does
+    /// not answer in time is [`Error::Timeout`].
     pub fn target_video_formats(&self, target: &str) -> Result<Vec<VideoFormatInfo>> {
         with_cstr(target, |target| unsafe {
             try_collect_list(
@@ -223,9 +250,17 @@ impl Filter {
 
 impl Drop for Filter {
     fn drop(&mut self) {
+        // The C library refuses to destroy a filter from its own callback and
+        // keeps it running, so the state that callback uses is leaked instead.
+        if in_callback_of(&**self.state as *const FilterState as *const c_void) {
+            return;
+        }
         // Destroying joins the loop thread, so no callback can be running by
         // the time the boxed state goes with it.
-        unsafe { sys::tpw_filter_destroy(self.handle) };
+        unsafe {
+            sys::tpw_filter_destroy(self.handle);
+            ManuallyDrop::drop(&mut self.state);
+        }
     }
 }
 
@@ -257,8 +292,8 @@ impl Port {
     }
 
     /// What kind of data this port carries.
-    pub fn kind(self) -> Option<StreamType> {
-        StreamType::from_raw(unsafe { sys::tpw_filter_port_get_type(self.as_raw()) })
+    pub fn kind(self) -> Option<DataType> {
+        DataType::from_raw(unsafe { sys::tpw_filter_port_get_type(self.as_raw()) })
     }
 
     /// Keeps re-presenting the last buffer on cycles where no new one
@@ -271,6 +306,12 @@ impl Port {
 
     /// Links this port to a node, by name or `object.serial`, with no session
     /// manager involved.
+    ///
+    /// Only an input port on a started filter can link; before the start it is
+    /// [`Error::NotConfigured`]. A target naming no node or port is
+    /// [`Error::NotFound`], a link that fails to negotiate is
+    /// [`Error::InvalidFormat`], and one that does not negotiate in time is
+    /// [`Error::Timeout`].
     pub fn link(self, target: &str) -> Result<()> {
         with_cstr(target, |target| unsafe {
             sys::tpw_filter_port_link(self.as_raw(), target.as_ptr())
@@ -539,7 +580,7 @@ unsafe extern "C" fn on_process(
     n_buffers: usize,
     user_data: *mut c_void,
 ) {
-    guard(|| {
+    guard_callback(user_data, || {
         let Some(state) = state::<FilterState>(user_data) else {
             return;
         };
@@ -560,7 +601,7 @@ unsafe extern "C" fn on_error(
     error_code: c_int,
     user_data: *mut c_void,
 ) {
-    guard(|| {
+    guard_callback(user_data, || {
         let Some(state) = state::<FilterState>(user_data) else {
             return;
         };
